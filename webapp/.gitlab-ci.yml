@@ -1,0 +1,54 @@
+image: docker:latest
+services:
+  - docker:dind
+
+variables:
+  DOCKER_DRIVER: overlay
+  REGISTRY: registry.beyond-coding.com
+  IMAGE: awesome/dockerwebapp
+
+stages:
+  - test
+  - build
+  - package
+  - deploy
+
+maven-test:
+  image: maven:3.6.0-jdk-8-alpine
+  stage: test
+  script: "mvn clean test"
+
+empty-test:
+  image: maven:3.6.0-jdk-8-alpine
+  stage: test
+  script:
+    - echo "This test runs parallel to maven-test"
+
+maven-build:
+  image: maven:3.6.0-jdk-8-alpine
+  stage: build
+  script: "mvn package -B"
+  artifacts:
+    paths:
+      - target/*.jar
+
+docker-build:
+  stage: package
+  script:
+    - docker build -t $REGISTRY/$IMAGE .
+    - docker login -u gitlab-ci-token -p $CI_BUILD_TOKEN $REGISTRY
+    - docker push $REGISTRY/$IMAGE
+
+rancher-webhook:
+  image: maven:3.6.0-jdk-8-alpine
+  stage: deploy
+  script:
+    - >-
+      curl
+      --request POST
+      --url 'https://ops.beyond-coding.com/v1-webhooks/endpoint?key=e5V0UtvFt5UldTLBLlGR47wFT8kIgkW0hCCHQnOh&projectId=1a7'
+      --header 'cache-control: no-cache'
+      --header 'content-type: application/json'
+      --data '{"push_data":{"tag":"latest"},"repository":{"repo_name":"registry.beyond-coding.com/awesome/dockerwebapp"}}'
+  only:
+    - master
